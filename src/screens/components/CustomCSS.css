@@ -1,0 +1,73 @@
+/* styles.css */
+
+.container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background-color: #fffb02;
+  padding-top: 20px; /* Adjusted for web, add padding for status bar */
+  font-family: 'Seougo UI', sans-serif;
+}
+
+.centerContent {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex: 1;
+}
+
+.bottomContent {
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.item {
+  margin: 24px;
+  font-size: 18px;
+  font-family: 'Seougo UI', sans-serif;
+  font-weight: bold;
+  text-align: center;
+  color: black;
+}
+
+.buttonText {
+  font-size: 18px;
+  font-family: 'Seougo UI', sans-serif;
+  font-weight: bold;
+  text-align: center;
+  color: black;
+}
+
+.button {
+  background-color: #ffffff;
+  color: #000000;
+  border-style: dashed;
+  border-width: 1px;
+  padding: 10px;
+  border-radius: 30px;
+  text-align: center;
+  align-self: center;
+  width: 80%;
+  cursor: pointer;
+}
+
+.text {
+  color: #000000;
+  margin: 24px;
+  font-size: 12px;
+  font-weight: light;
+  text-align: center;
+}
+
+.logo {
+  width: 200px;
+  height: 250px;
+  margin: 0 auto;
+}
+
+.camera {
+  border-radius: 5px;
+  margin: 20px;
+  flex: 1;
+}
