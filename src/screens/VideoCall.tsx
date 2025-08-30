@@ -1,41 +1,43 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
-import {io, Socket} from "socket.io-client";
+import { io, Socket } from "socket.io-client";
 
 const VideoCall: React.FC = () => {
-  const { email } =useParams();  
-  const decodedEmail = decodeURIComponent(email || '');
+  const { email } = useParams();
+  const decodedEmail = decodeURIComponent(email || "");
+
   const [roomUsers, setRoomUsers] = useState<string[]>([]);
   const [myId, setMySocketId] = useState<string>();
-  const socketRef = useRef<Socket | null>(null);    //Restoring the state of socket even on refresh
-  const [incomingCall, setIncomingCall] = useState(0);
+  const socketRef = useRef<Socket | null>(null);
+
   const [callerReq, setCallerReq] = useState<{
-    isIncoming: boolean,
-    callerId : string,
-    callType : string
-  }| null>(null);
-  const webRTCtionRef = useRef<RTCPeerConnection | null>(null);//for state of the webrtc connection of caller & callee
-  // const webRTCtionRefCallee = useRef<RTCPeerConnection | null>();
+    isIncoming: boolean;
+    callerId: string;
+    callType: string;
+  } | null>(null);
+
+  const webRTCRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
 
+  // ✅ Track who I am connected to
+  const peerIdRef = useRef<string | null>(null);
 
-  //on entering need to establish the connection to the sockets
   useEffect(() => {
-    if(!socketRef.current){
+    if (!socketRef.current) {
       socketRef.current = io("http://localhost:3000");
     }
     const socket = socketRef.current;
-    socket.on("connect", ()=> {
-      setMySocketId(() => socket.id);
-      // Join the room with the decoded email
+
+    socket.on("connect", () => {
+      setMySocketId(socket.id);
       socket.emit("join-room", { roomId: decodedEmail });
     });
-    
+
     socket.on("room-users", (data) => {
-      console.log("Room users:", data.users);
-      setRoomUsers(data.users); // Server sends { users: [...] }
+      setRoomUsers(data.users);
     });
+
     socket.on("user-joined", (data) => {
       setRoomUsers(prev => {
         if (!prev.includes(data.socketId)) {
@@ -44,148 +46,93 @@ const VideoCall: React.FC = () => {
         return prev;
       });
     });
-    
-    //when a user gets an offer
-    socket.on("pre-offer",({ callerSocketId, callType })=>{
+    // incoming call
+    socket.on("pre-offer", ({ callerSocketId, callType }) => {
       setCallerReq({
         isIncoming: true,
         callerId: callerSocketId,
-        callType
+        callType,
       });
     });
 
-    //reading the response from callee on caller side
-    socket.on("pre-offer-answer", async (data)=>{
-      console.log("Answer : ", data);
-      if(data.preOfferAnswer ==="ACCEPTED"){
-        webRTCtionRef.current = new RTCPeerConnection();
+    //Caller side: callee accepted/rejected
+    socket.on("pre-offer-answer", async (data) => {
+      console.log("📨 Pre-offer-answer:", data);
+      if (data.preOfferAnswer === "ACCEPTED") {
+        peerIdRef.current = data.calleeSocketId;
 
-        webRTCtionRef.current.onicecandidate = (event) => {
-          if (event.candidate) {
-            socketRef.current?.emit("webRTC-signaling", {
-              type: "ice-candidate",
-              candidate: event.candidate,
-              connectedUserSocketId: data.connectedUserSocketId
-            });
-          }
-        };
+        createPeerConnection();
 
+        // add local tracks
+        localStreamRef.current?.getTracks().forEach((track) => {
+          webRTCRef.current?.addTrack(track, localStreamRef.current!);
+        });
 
-        //to display remote user
-        webRTCtionRef.current.ontrack = (event) =>{
-          console.log("📽️ ontrack fired, remote stream tracks:", event.streams[0].getTracks());
-          if (!remoteStreamRef.current) {
-            remoteStreamRef.current = new MediaStream();
-          }
-          event.streams[0].getTracks().forEach((track) => {
-            remoteStreamRef.current?.addTrack(track);
-          });
-          const remoteVideo = document.getElementById("remote-video") as HTMLVideoElement;
-          if (remoteVideo && remoteStreamRef.current) {
-            remoteVideo.srcObject = remoteStreamRef.current;
-          }
-          remoteVideo.play().catch(e => console.log("Autoplay blocked:", e));
+        const offer = await webRTCRef.current!.createOffer();
+        await webRTCRef.current!.setLocalDescription(offer);
 
-        }
-
-        localStreamRef.current?.getTracks().forEach(track => {
-          webRTCtionRef.current?.addTrack(track, localStreamRef.current!);
-        });        
-        const offer = await webRTCtionRef.current.createOffer();
-        await webRTCtionRef.current.setLocalDescription(offer);
-        const localVideo = document.getElementById('local-video') as HTMLVideoElement;
-        if (localVideo && localStreamRef.current) {
-          localVideo.srcObject = localStreamRef.current;
-        }
         socket.emit("webRTC-signaling", {
           type: "offer",
           sdp: offer,
-          connectedUserSocketId: data.connectedUserSocketId
+          connectedUserSocketId: peerIdRef.current,
         });
-        webRTCtionRef.current.onconnectionstatechange = () => {
-  console.log("Connection state:", webRTCtionRef.current?.connectionState);
-};
-
+      } else {
+        console.log("Call was rejected or user not found");
       }
     });
 
-    //when callee accepts so for their to say answer on callee side
-    socket.on("webRTC-signaling", async(data)=>{
-      if(data.type === "offer"){
-        webRTCtionRef.current = new RTCPeerConnection();
+    // 📡 Handle signaling
+    socket.on("webRTC-signaling", async (data) => {
+      
+      const sender = data.senderSocketId;
+      console.log("📡 Got signaling:", data.type, "from", sender);
 
-        webRTCtionRef.current.onicecandidate = (event) => {
-          if (event.candidate) {
-            socketRef.current?.emit("webRTC-signaling", {
-              type: "ice-candidate",
-              candidate: event.candidate,
-              connectedUserSocketId: data.connectedUserSocketId,
-            });
-          }
-        };
+      if (data.type === "offer") {
+        peerIdRef.current = sender;
 
+        createPeerConnection();
 
-         webRTCtionRef.current.ontrack = (event) => {
-          console.log("📽️ ontrack fired, remote stream tracks:", event.streams[0].getTracks());
-          if (!remoteStreamRef.current) {
-            remoteStreamRef.current = new MediaStream();
-          }
-          event.streams[0].getTracks().forEach((track) => {
-            remoteStreamRef.current?.addTrack(track);
-          });
-          const remoteVideo = document.getElementById("remote-video") as HTMLVideoElement;
-          if (remoteVideo && remoteStreamRef.current) {
-            remoteVideo.srcObject = remoteStreamRef.current;
-          }
-          remoteVideo.play().catch(e => console.log("Autoplay blocked:", e));
-
-        };
-        localStreamRef.current?.getTracks().forEach(track => {
-          webRTCtionRef.current?.addTrack(track, localStreamRef.current!);
+        // add local tracks
+        localStreamRef.current?.getTracks().forEach((track) => {
+          webRTCRef.current?.addTrack(track, localStreamRef.current!);
         });
-        await webRTCtionRef.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
-        const answer = await webRTCtionRef.current.createAnswer();
-        await webRTCtionRef.current.setLocalDescription(answer);
-        const localVideo = document.getElementById('local-video') as HTMLVideoElement;
-        if (localVideo && localStreamRef.current) {
-          localVideo.srcObject = localStreamRef.current;
-        }
-        socket.emit("webRTC-signaling",{
+
+        await webRTCRef.current!.setRemoteDescription(
+          new RTCSessionDescription(data.sdp)
+        );
+        const answer = await webRTCRef.current!.createAnswer();
+        await webRTCRef.current!.setLocalDescription(answer);
+
+        socket.emit("webRTC-signaling", {
           type: "answer",
           sdp: answer,
-          connectedUserSocketId: data.connectedUserSocketId
+          connectedUserSocketId: peerIdRef.current,
         });
-        webRTCtionRef.current.onconnectionstatechange = () => {
-  console.log("Connection state:", webRTCtionRef.current?.connectionState);
-};
-
-
-      }
-      if (data.type === "answer") {
-        await webRTCtionRef.current?.setRemoteDescription(new RTCSessionDescription(data.sdp));
-      }
-      if (data.type === "ice-candidate") {
+      } else if (data.type === "answer") {
+        await webRTCRef.current?.setRemoteDescription(
+          new RTCSessionDescription(data.sdp)
+        );
+      } else if (data.type === "ice-candidate") {
         try {
           if (data.candidate) {
-            await webRTCtionRef.current?.addIceCandidate(new RTCIceCandidate(data.candidate));
+            await webRTCRef.current?.addIceCandidate(
+              new RTCIceCandidate(data.candidate)
+            );
           }
-        } catch (error) {
-          console.error("Error adding received ice candidate", error);
+        } catch (err) {
+          console.error("Error adding ICE candidate", err);
         }
       }
     });
-    
 
-    // When a user leaves
+    // ❌ Handle disconnect
     socket.on("user-disconnected", (data) => {
-      setRoomUsers(prev => prev.filter(id => id !== data.socketId));
+      setRoomUsers((prev) => prev.filter((id) => id !== data.socketId));
     });
+
     return () => {
-      socket.off("room-users");
-      socket.off("user-joined");
-      socket.off("user-disconnected");
-      socket.disconnect(); // Optional: Only if you're leaving the room
-      socketRef.current = null; // Reset socket to null
+      socket.disconnect();
+      socketRef.current = null;
     };
   }, [decodedEmail]);
   useEffect(() => {// to make sure id is set when the component mounts/changes
@@ -194,72 +141,122 @@ const VideoCall: React.FC = () => {
         }
   },[myId]);
 
+  // --- Local Media ---
   useEffect(() => {
-    const getMedia = async ()=>{
-      try{
-        const stream = await navigator.mediaDevices.getUserMedia({video:true, audio:true});
+    const getMedia = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
+        });
         localStreamRef.current = stream;
-
-        const localVideo = document.getElementById("local-video") as HTMLVideoElement;
-        if(localVideo)
-            localVideo.srcObject = stream;
-      }catch(err){
-        console.log("Error in local video",err);
-        
+        const localVideo = document.getElementById(
+          "local-video"
+        ) as HTMLVideoElement;
+        if (localVideo) localVideo.srcObject = stream;
+      } catch (err) {
+        console.error("Error accessing media devices", err);
       }
     };
     getMedia();
-  },[])
+  }, []);
 
-  function handleCallUser(id:string) {
-    socketRef.current?.emit("pre-offer",{calleePersonalCode: id, callType: "video"});//? for silently skipping if "null or undefined"
-  };
+  // --- Helpers ---
+  function createPeerConnection() {
+    webRTCRef.current = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    });
 
-  function handleAccept(){
-    console.log("clicked");
-    
-    if(callerReq?.callerId){
-    socketRef.current?.emit("pre-offer-answer",{
-      callerSocketId: callerReq?.callerId,
-      preOfferAnswer : "ACCEPTED"
-     })
+    webRTCRef.current.onicecandidate = (event) => {
+      if (event.candidate && peerIdRef.current) {
+        socketRef.current?.emit("webRTC-signaling", {
+          type: "ice-candidate",
+          candidate: event.candidate,
+          connectedUserSocketId: peerIdRef.current,
+        });
+      }
+    };
+
+    webRTCRef.current.ontrack = (event) => {
+      console.log("📹 Remote stream received:", event.streams);
+      if (!remoteStreamRef.current) remoteStreamRef.current = new MediaStream();
+      event.streams[0].getTracks().forEach((track) => {
+        remoteStreamRef.current?.addTrack(track);
+      });
+      const remoteVideo = document.getElementById(
+        "remote-video"
+      ) as HTMLVideoElement;
+      if (remoteVideo) remoteVideo.srcObject = remoteStreamRef.current;
+    };
+
+    webRTCRef.current.onconnectionstatechange = () => {
+      console.log("🔗 Connection state:", webRTCRef.current?.connectionState);
     };
   }
 
-  function handleReject(){
-    if (callerReq?.callerId) {
-    socketRef.current?.emit("pre-offer-answer", {
-      callerSocketId: callerReq.callerId,
-      preOfferAnswer: "REJECTED"
+  // --- UI actions ---
+  function handleCallUser(id: string) {
+    socketRef.current?.emit("pre-offer", {
+      calleePersonalCode: id,
+      callType: "video",
     });
+  }
+
+  function handleAccept() {
+    if (callerReq?.callerId) {
+      socketRef.current?.emit("pre-offer-answer", {
+        callerSocketId: callerReq.callerId,
+        preOfferAnswer: "ACCEPTED",
+      });
+      setCallerReq(null);
     }
   }
-  return(
+
+  function handleReject() {
+    if (callerReq?.callerId) {
+      socketRef.current?.emit("pre-offer-answer", {
+        callerSocketId: callerReq.callerId,
+        preOfferAnswer: "REJECTED",
+      });
+      setCallerReq(null);
+    }
+  }
+
+  return (
     <div>
-      <div>Your Id is : {myId}</div>
-      <h2>
-        Welcome to the room : {decodedEmail}
-      </h2>
-      {roomUsers
-        .filter((id)=>id!==myId)
-        .map((id)=>(
-        <div key={id} >
-            <span>{id}</span>
-            <button onClick={() => handleCallUser(id)}>Call</button>
+      <h3>My ID: {myId}</h3>
+      <h2>Room: {decodedEmail}</h2>
+
+      {roomUsers.filter((id) => id !== myId).map((id) => (
+        <div key={id}>
+          <span>{id}</span>
+          <button onClick={() => handleCallUser(id)}>📞 Call</button>
         </div>
       ))}
 
-      {(callerReq?.isIncoming && (
+      {callerReq?.isIncoming && (
         <div>
-          <button onClick={handleAccept} disabled={!localStreamRef.current}> Accept </button>
-          <button onClick={handleReject}> Reject </button>
+          <p>Incoming {callerReq.callType} call...</p>
+          <button onClick={handleAccept}>✅ Accept</button>
+          <button onClick={handleReject}>❌ Reject</button>
         </div>
-      ))}
-      <video id="remote-video" autoPlay playsInline style={{ width: '400px', border: '1px solid black' }} />
-      <video id="local-video" autoPlay playsInline muted style={{ width: '400px', border: '1px solid black' }} />
+      )}
 
+      <video
+        id="remote-video"
+        autoPlay
+        playsInline
+        style={{ width: "400px", border: "1px solid black" }}
+      />
+      <video
+        id="local-video"
+        autoPlay
+        playsInline
+        muted
+        style={{ width: "400px", border: "1px solid black" }}
+      />
     </div>
-  )
+  );
 };
 
 export default VideoCall;
