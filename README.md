@@ -1,7 +1,6 @@
-```markdown
 ## WebRTC Call Flow Diagram
 
-```
+```text
 Caller                          Server                          Callee
   |                               |                               |
   |--- pre-offer (callType) ----->|                               |
@@ -41,4 +40,3 @@ Caller                          Server                          Callee
   |                               |                               |
   |--- connectionstatechange ---> logs ("connected")              |
   |                               |                               |
-```
