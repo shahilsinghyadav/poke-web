@@ -2,6 +2,12 @@ import React, { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
 
+import muteIcon from "../assets/mute.png";
+import unmuteIcon from "../assets/unmute.png";
+import videoOnIcon from "../assets/videoOn.png";
+import videoOffIcon from "../assets/videoOff.png";
+
+
 const VideoCall: React.FC = () => {
   const { email } = useParams();
   const decodedEmail = decodeURIComponent(email || "");
@@ -9,17 +15,17 @@ const VideoCall: React.FC = () => {
   const [roomUsers, setRoomUsers] = useState<string[]>([]);
   const [myId, setMySocketId] = useState<string>();
   const socketRef = useRef<Socket | null>(null);
-
   const [callerReq, setCallerReq] = useState<{
     isIncoming: boolean;
     callerId: string;
     callType: string;
   } | null>(null);
+  const [muted, setMuted] = useState<boolean>(false);
+  const [videoOff, setVideo] = useState<boolean>(false);
 
   const webRTCRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
-
   // ✅ Track who I am connected to
   const peerIdRef = useRef<string | null>(null);
 
@@ -83,7 +89,7 @@ const VideoCall: React.FC = () => {
 
     // 📡 Handle signaling
     socket.on("webRTC-signaling", async (data) => {
-      
+
       const sender = data.senderSocketId;
       console.log("📡 Got signaling:", data.type, "from", sender);
 
@@ -136,10 +142,10 @@ const VideoCall: React.FC = () => {
     };
   }, [decodedEmail]);
   useEffect(() => {// to make sure id is set when the component mounts/changes
-        if(myId) {
-          console.log("My socket ID:", myId);
-        }
-  },[myId]);
+    if (myId) {
+      console.log("My socket ID:", myId);
+    }
+  }, [myId]);
 
   // --- Local Media ---
   useEffect(() => {
@@ -222,6 +228,20 @@ const VideoCall: React.FC = () => {
     }
   }
 
+  function toggleMute() {
+    const audioTrack = localStreamRef.current?.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled;
+      setMuted(!audioTrack.enabled);
+    }
+  }
+  function toggleVideo() {
+    const videoTrack = localStreamRef.current?.getVideoTracks()[0];
+    if (videoTrack) {
+      videoTrack.enabled = !videoTrack.enabled;
+      setVideo(!videoTrack.enabled);
+    }
+  }
   return (
     <div>
       <h3>My ID: {myId}</h3>
@@ -255,6 +275,25 @@ const VideoCall: React.FC = () => {
         muted
         style={{ width: "400px", border: "1px solid black" }}
       />
+
+      <div>
+        <button onClick={toggleMute}>
+          <img
+            src={muted ? muteIcon : unmuteIcon}
+            alt={muted ? "Unmute" : "Mute"}
+            style={{ width: "30px", height: "30px", borderRadius:50,}}
+          />
+        </button>
+
+        <button onClick={toggleVideo}>
+          <img
+            src={videoOff ? videoOffIcon : videoOnIcon}
+            alt={videoOff ? "Video Off" : "Video On"}
+            style={{ width: "30px", height: "30px" }}
+          />
+        </button>
+
+      </div>
     </div>
   );
 };
