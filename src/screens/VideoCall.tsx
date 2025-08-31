@@ -31,13 +31,7 @@ const VideoCall: React.FC = () => {
 
   useEffect(() => {
     if (!socketRef.current) {
-      socketRef.current = io(
-        "https://signaling-service-production.up.railway.app",
-        {
-          transports: ["websocket", "polling"],
-          withCredentials: true,
-        }
-      );
+      socketRef.current = io("http://localhost:3000");
     }
     const socket = socketRef.current;
 
