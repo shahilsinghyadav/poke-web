@@ -31,27 +31,6 @@
   color: black;
 }
 
-.buttonText {
-  font-size: 18px;
-  font-family: 'Seougo UI', sans-serif;
-  font-weight: bold;
-  text-align: center;
-  color: black;
-}
-
-.button {
-  background-color: #ffffff;
-  color: #000000;
-  border-style: dashed;
-  border-width: 1px;
-  padding: 10px;
-  border-radius: 30px;
-  text-align: center;
-  align-self: center;
-  width: 80%;
-  cursor: pointer;
-}
-
 .text {
   color: #000000;
   margin: 24px;
@@ -66,8 +45,16 @@
   margin: 0 auto;
 }
 
-.camera {
-  border-radius: 5px;
-  margin: 20px;
-  flex: 1;
+
+.custom-button{
+  background-color: #535bf2;
+  color: white;
+  border-style: dashed;
+  border-width: 1px;
+  padding: 10px;
+  border-radius: 30px;
+  text-align: center;
+  align-self: center;
+  width: 80%;
+  cursor: pointer;
 }

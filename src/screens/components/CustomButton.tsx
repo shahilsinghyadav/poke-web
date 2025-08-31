@@ -1,4 +1,5 @@
 import React from 'react';
+import './CustomCSS.css';
 
 interface CustomButtonProps {
   text: string;

@@ -6,7 +6,7 @@ import muteIcon from "../assets/mute.png";
 import unmuteIcon from "../assets/unmute.png";
 import videoOnIcon from "../assets/videoOn.png";
 import videoOffIcon from "../assets/videoOff.png";
-
+import '../index.css';
 
 const VideoCall: React.FC = () => {
   const { email } = useParams();
@@ -31,7 +31,7 @@ const VideoCall: React.FC = () => {
 
   useEffect(() => {
     if (!socketRef.current) {
-      socketRef.current = io("http://localhost:3000");
+      socketRef.current = io("https://signaling-service-kappa.vercel.app:3000/");
     }
     const socket = socketRef.current;
 
@@ -134,6 +134,26 @@ const VideoCall: React.FC = () => {
     // ❌ Handle disconnect
     socket.on("user-disconnected", (data) => {
       setRoomUsers((prev) => prev.filter((id) => id !== data.socketId));
+    });
+    socket.on("hang-up", () => {
+      console.log("📴 Peer hung up, cleaning up...");
+      localStreamRef.current?.getTracks().forEach((track) => track.stop());
+      if (webRTCRef.current) {
+        webRTCRef.current.close();
+        webRTCRef.current = null;
+      }
+      const localVideo = document.getElementById(
+        "local-video"
+      ) as HTMLVideoElement;
+      const remoteVideo = document.getElementById(
+        "remote-video"
+      ) as HTMLVideoElement;
+      if (localVideo) localVideo.srcObject = null;
+      if (remoteVideo) remoteVideo.srcObject = null;
+
+      setMuted(false);
+      setVideo(true);
+      peerIdRef.current = null;
     });
 
     return () => {
@@ -242,17 +262,45 @@ const VideoCall: React.FC = () => {
       setVideo(!videoTrack.enabled);
     }
   }
+  function handleHangUp() {
+    localStreamRef.current?.getTracks().forEach((track) => track.stop());
+
+    if (webRTCRef.current) {
+      webRTCRef.current.close();
+      webRTCRef.current = null;
+    }
+
+    const localVideo = document.getElementById(
+      "local-video"
+    ) as HTMLVideoElement;
+    const remoteVideo = document.getElementById(
+      "remote-video"
+    ) as HTMLVideoElement;
+    if (localVideo) localVideo.srcObject = null;
+    if (remoteVideo) remoteVideo.srcObject = null;
+
+    setMuted(false);
+    setVideo(false);
+
+    socketRef.current?.emit("hang-up", {
+      connectedUserSocketId: peerIdRef.current,
+    });
+    peerIdRef.current=null;
+  }
+
   return (
-    <div>
+    <div className="video-chat-page">
       <h3>My ID: {myId}</h3>
       <h2>Room: {decodedEmail}</h2>
 
-      {roomUsers.filter((id) => id !== myId).map((id) => (
-        <div key={id}>
-          <span>{id}</span>
-          <button onClick={() => handleCallUser(id)}>📞 Call</button>
-        </div>
-      ))}
+      {roomUsers
+        .filter((id) => id !== myId)
+        .map((id) => (
+          <div key={id}>
+            <span>{id}</span>
+            <button onClick={() => handleCallUser(id)}>📞 Call</button>
+          </div>
+        ))}
 
       {callerReq?.isIncoming && (
         <div>
@@ -262,26 +310,15 @@ const VideoCall: React.FC = () => {
         </div>
       )}
 
-      <video
-        id="remote-video"
-        autoPlay
-        playsInline
-        style={{ width: "400px", border: "1px solid black" }}
-      />
-      <video
-        id="local-video"
-        autoPlay
-        playsInline
-        muted
-        style={{ width: "400px", border: "1px solid black" }}
-      />
+      <video id="remote-video" className="camera" autoPlay playsInline />
+      <video id="local-video" className="camera" autoPlay playsInline muted />
 
-      <div>
+      <div className="button-bar">
         <button onClick={toggleMute}>
           <img
             src={muted ? muteIcon : unmuteIcon}
             alt={muted ? "Unmute" : "Mute"}
-            style={{ width: "30px", height: "30px", borderRadius:50,}}
+            style={{ width: "30px", height: "30px", borderRadius: 50 }}
           />
         </button>
 
@@ -292,7 +329,12 @@ const VideoCall: React.FC = () => {
             style={{ width: "30px", height: "30px" }}
           />
         </button>
-
+        <button
+          onClick={handleHangUp}
+          style={{ backgroundColor: "red", color: "white", padding: "10px" }}
+        >
+          End Call
+        </button>
       </div>
     </div>
   );
