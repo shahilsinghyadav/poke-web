@@ -31,7 +31,13 @@ const VideoCall: React.FC = () => {
 
   useEffect(() => {
     if (!socketRef.current) {
-      socketRef.current = io("https://signaling-service-production.up.railway.app");
+      socketRef.current = io(
+        "https://signaling-service-production.up.railway.app",
+        {
+          transports: ["websocket", "polling"],
+          withCredentials: true,
+        }
+      );
     }
     const socket = socketRef.current;
 
