@@ -31,7 +31,7 @@ const VideoCall: React.FC = () => {
 
   useEffect(() => {
     if (!socketRef.current) {
-      socketRef.current = io("https://signaling-service-production.up.railway.app:3000");
+      socketRef.current = io("https://signaling-service-production.up.railway.app");
     }
     const socket = socketRef.current;
 
